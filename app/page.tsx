@@ -18,6 +18,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Set<Kind>>(new Set(["sol", "usdc", "memecoin"]));
   const [minSol, setMinSol] = useState("0.05");
   const [hideKnown, setHideKnown] = useState(true);
+  const [requireValue, setRequireValue] = useState(true);
   const [hidden, setHidden] = useState(0);
   const [minUsdc, setMinUsdc] = useState("");
   const [direction, setDirection] = useState<"both" | "in" | "out">("both");
@@ -28,7 +29,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
 
-  const wallets = useMemo(() => summarizeByWallet(rows), [rows]);
+  // Wallets that only exchanged "other tokens" (often spam airdrops) have 0 SOL and 0 USDC flow.
+  const wallets = useMemo(
+    () =>
+      summarizeByWallet(rows).filter(
+        (w) => !requireValue || w.solIn + w.solOut + w.usdcIn + w.usdcOut > 0
+      ),
+    [rows, requireValue]
+  );
 
   function toggle(kind: Kind) {
     setSelected((prev) => {
@@ -142,6 +150,14 @@ export default function Home() {
               onChange={(e) => setHideKnown(e.target.checked)}
             />
             Hide exchanges &amp; programs
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={requireValue}
+              onChange={(e) => setRequireValue(e.target.checked)}
+            />
+            Hide wallets with no SOL/USDC movement
           </label>
         </div>
         <button className="btn" disabled={loading || !wallet.trim() || selected.size === 0}>
