@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { classifyTransaction, Kind, TransferRow } from "@/lib/classify";
+import { findHiddenAddresses } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,13 @@ const PAGE_SIZE = 100; // Helius max per request
 const MAX_PAGES = 5; // up to 500 txs scanned per API call
 const ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/; // base58, 32-44 chars
 const VALID_KINDS: Kind[] = ["sol", "usdc", "memecoin"];
+
+// Empty/missing -> 0 (no minimum). Returns null when the value is not a valid amount.
+function parseMin(raw: string | null): number | null {
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 export async function GET(req: NextRequest) {
   const apiKey = process.env.HELIUS_API_KEY;
@@ -25,6 +33,19 @@ export async function GET(req: NextRequest) {
     .split(",")
     .filter((k): k is Kind => VALID_KINDS.includes(k as Kind));
 
+  // Minimum amounts (inclusive). minSol applies to "sol" rows, minUsdc to "usdc" rows.
+  const minSol = parseMin(searchParams.get("minSol"));
+  const minUsdc = parseMin(searchParams.get("minUsdc"));
+  if (minSol === null || minUsdc === null) {
+    return NextResponse.json({ error: "Invalid minimum amount" }, { status: 400 });
+  }
+
+  // Direction filter relative to the scanned wallet: "in", "out" or "both" (default).
+  const direction = searchParams.get("direction") ?? "both";
+  if (!["in", "out", "both"].includes(direction)) {
+    return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
+  }
+
   if (!ADDRESS_RE.test(wallet)) {
     return NextResponse.json({ error: "Invalid Solana address" }, { status: 400 });
   }
@@ -32,8 +53,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Select at least one filter" }, { status: 400 });
   }
 
+  // Hide program and exchange counterparties unless ?hideKnown=0.
+  const hideKnown = searchParams.get("hideKnown") !== "0";
+
   const wanted = new Set<Kind>(kinds);
-  const rows: TransferRow[] = [];
+  let rows: TransferRow[] = [];
   let cursor = before;
   let scanned = 0;
   let exhausted = false;
@@ -62,7 +86,11 @@ export async function GET(req: NextRequest) {
     scanned += txs.length;
     for (const tx of txs) {
       for (const row of classifyTransaction(tx, wallet)) {
-        if (wanted.has(row.kind)) rows.push(row);
+        if (!wanted.has(row.kind)) continue;
+        if (direction !== "both" && row.direction !== direction) continue;
+        if (row.kind === "sol" && row.amount < minSol) continue;
+        if (row.kind === "usdc" && row.amount < minUsdc) continue;
+        rows.push(row);
       }
     }
 
@@ -73,8 +101,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  let hiddenWallets = 0;
+  if (hideKnown && rows.length > 0) {
+    const hidden = await findHiddenAddresses(
+      rows.map((r) => r.counterparty),
+      apiKey
+    );
+    hiddenWallets = hidden.size;
+    rows = rows.filter((r) => !hidden.has(r.counterparty));
+  }
+
   return NextResponse.json({
     rows,
+    hiddenWallets,
     scanned,
     // pass this back as ?before= to load older history
     nextBefore: exhausted ? null : cursor,

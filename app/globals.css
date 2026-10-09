@@ -36,6 +36,7 @@ h1 { margin: 0 0 4px; }
   color: var(--text);
   font-family: ui-monospace, monospace;
 }
+.input.num { width: 140px; }
 .filters { display: flex; flex-wrap: wrap; gap: 16px; }
 .check { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .btn {
