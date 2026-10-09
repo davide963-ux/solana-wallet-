@@ -17,6 +17,8 @@ export default function Home() {
   const [wallet, setWallet] = useState("");
   const [selected, setSelected] = useState<Set<Kind>>(new Set(["sol", "usdc", "memecoin"]));
   const [minSol, setMinSol] = useState("0.05");
+  const [hideKnown, setHideKnown] = useState(true);
+  const [hidden, setHidden] = useState(0);
   const [minUsdc, setMinUsdc] = useState("");
   const [direction, setDirection] = useState<"both" | "in" | "out">("both");
   const [rows, setRows] = useState<TransferRow[]>([]);
@@ -47,6 +49,7 @@ export default function Home() {
       if (minSol.trim()) params.set("minSol", minSol.trim());
       if (minUsdc.trim()) params.set("minUsdc", minUsdc.trim());
       params.set("direction", direction);
+      params.set("hideKnown", hideKnown ? "1" : "0");
       if (before) params.set("before", before);
 
       const res = await fetch(`/api/scan?${params}`);
@@ -55,6 +58,7 @@ export default function Home() {
 
       setRows((prev) => (before ? [...prev, ...data.rows] : data.rows));
       setScanned((prev) => (before ? prev + data.scanned : data.scanned));
+      setHidden((prev) => (before ? prev + data.hiddenWallets : data.hiddenWallets));
       setNextBefore(data.nextBefore);
       setSearched(true);
     } catch (e: any) {
@@ -131,6 +135,14 @@ export default function Home() {
               onChange={(e) => setMinUsdc(e.target.value)}
             />
           </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={hideKnown}
+              onChange={(e) => setHideKnown(e.target.checked)}
+            />
+            Hide exchanges &amp; programs
+          </label>
         </div>
         <button className="btn" disabled={loading || !wallet.trim() || selected.size === 0}>
           {loading && rows.length === 0 ? "Scanning…" : "Scan wallet"}
@@ -144,6 +156,7 @@ export default function Home() {
           <p className="muted">
             {wallets.length} wallets ({rows.length} matching transfers) from {scanned} transactions
             scanned
+            {hideKnown && hidden > 0 && ` · ${hidden} exchange/program wallets hidden`}
           </p>
           {wallets.length > 0 && (
             <div className="tablewrap">

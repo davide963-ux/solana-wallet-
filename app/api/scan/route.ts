@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { classifyTransaction, Kind, TransferRow } from "@/lib/classify";
+import { findHiddenAddresses } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +53,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Select at least one filter" }, { status: 400 });
   }
 
+  // Hide program and exchange counterparties unless ?hideKnown=0.
+  const hideKnown = searchParams.get("hideKnown") !== "0";
+
   const wanted = new Set<Kind>(kinds);
-  const rows: TransferRow[] = [];
+  let rows: TransferRow[] = [];
   let cursor = before;
   let scanned = 0;
   let exhausted = false;
@@ -97,8 +101,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  let hiddenWallets = 0;
+  if (hideKnown && rows.length > 0) {
+    const hidden = await findHiddenAddresses(
+      rows.map((r) => r.counterparty),
+      apiKey
+    );
+    hiddenWallets = hidden.size;
+    rows = rows.filter((r) => !hidden.has(r.counterparty));
+  }
+
   return NextResponse.json({
     rows,
+    hiddenWallets,
     scanned,
     // pass this back as ?before= to load older history
     nextBefore: exhausted ? null : cursor,
