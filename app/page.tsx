@@ -14,6 +14,7 @@ const short = (s: string) => `${s.slice(0, 4)}…${s.slice(-4)}`;
 export default function Home() {
   const [wallet, setWallet] = useState("");
   const [selected, setSelected] = useState<Set<Kind>>(new Set(["sol", "usdc", "memecoin"]));
+  const [minSol, setMinSol] = useState("0.05");
   const [rows, setRows] = useState<TransferRow[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [scanned, setScanned] = useState(0);
@@ -37,6 +38,7 @@ export default function Home() {
         wallet: wallet.trim(),
         kinds: Array.from(selected).join(","),
       });
+      if (minSol.trim()) params.set("minSol", minSol.trim());
       if (before) params.set("before", before);
 
       const res = await fetch(`/api/scan?${params}`);
@@ -86,6 +88,18 @@ export default function Home() {
             </label>
           ))}
         </div>
+        <label className="check">
+          Min SOL amount
+          <input
+            className="input num"
+            type="number"
+            min="0"
+            step="any"
+            value={minSol}
+            onChange={(e) => setMinSol(e.target.value)}
+          />
+          <span className="muted">(SOL transfers only)</span>
+        </label>
         <button className="btn" disabled={loading || !wallet.trim() || selected.size === 0}>
           {loading && rows.length === 0 ? "Scanning…" : "Scan wallet"}
         </button>

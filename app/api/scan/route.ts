@@ -25,6 +25,13 @@ export async function GET(req: NextRequest) {
     .split(",")
     .filter((k): k is Kind => VALID_KINDS.includes(k as Kind));
 
+  // Minimum SOL amount (inclusive). Only applies to rows of kind "sol".
+  const minSolRaw = searchParams.get("minSol");
+  const minSol = minSolRaw ? Number(minSolRaw) : 0;
+  if (!Number.isFinite(minSol) || minSol < 0) {
+    return NextResponse.json({ error: "Invalid minimum SOL amount" }, { status: 400 });
+  }
+
   if (!ADDRESS_RE.test(wallet)) {
     return NextResponse.json({ error: "Invalid Solana address" }, { status: 400 });
   }
@@ -62,7 +69,9 @@ export async function GET(req: NextRequest) {
     scanned += txs.length;
     for (const tx of txs) {
       for (const row of classifyTransaction(tx, wallet)) {
-        if (wanted.has(row.kind)) rows.push(row);
+        if (!wanted.has(row.kind)) continue;
+        if (row.kind === "sol" && row.amount < minSol) continue;
+        rows.push(row);
       }
     }
 
