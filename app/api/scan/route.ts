@@ -49,7 +49,13 @@ export async function GET(req: NextRequest) {
   if (!ADDRESS_RE.test(wallet)) {
     return NextResponse.json({ error: "Invalid Solana address" }, { status: 400 });
   }
-  if (kinds.length === 0) {
+
+  // Optional token filter (mint / CA): only transfers of this exact token are kept.
+  const mint = (searchParams.get("mint") ?? "").trim();
+  if (mint && !ADDRESS_RE.test(mint)) {
+    return NextResponse.json({ error: "Invalid token address (CA)" }, { status: 400 });
+  }
+  if (!mint && kinds.length === 0) {
     return NextResponse.json({ error: "Select at least one filter" }, { status: 400 });
   }
 
@@ -86,7 +92,9 @@ export async function GET(req: NextRequest) {
     scanned += txs.length;
     for (const tx of txs) {
       for (const row of classifyTransaction(tx, wallet)) {
-        if (!wanted.has(row.kind)) continue;
+        if (mint) {
+          if (row.mint !== mint) continue; // token mode ignores the kind checkboxes
+        } else if (!wanted.has(row.kind)) continue;
         if (direction !== "both" && row.direction !== direction) continue;
         if (row.kind === "sol" && row.amount < minSol) continue;
         if (row.kind === "usdc" && row.amount < minUsdc) continue;
