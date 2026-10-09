@@ -10,12 +10,17 @@ export interface WalletSummary {
   usdcIn: number;
   usdcOut: number;
   memecoinTransfers: number; // count only: token amounts are not comparable
+  // Only filled when a specific token (mint) is searched:
+  tokenIn: number; // number of transfers received from this wallet
+  tokenOut: number; // number of transfers sent to this wallet
+  tokenAmountIn: number;
+  tokenAmountOut: number;
   firstSeen: number; // unix seconds
   lastSeen: number; // unix seconds
   lastSignature: string;
 }
 
-export function summarizeByWallet(rows: TransferRow[]): WalletSummary[] {
+export function summarizeByWallet(rows: TransferRow[], mint?: string): WalletSummary[] {
   const map = new Map<string, WalletSummary>();
   const sigs = new Map<string, Set<string>>();
 
@@ -30,6 +35,10 @@ export function summarizeByWallet(rows: TransferRow[]): WalletSummary[] {
         usdcIn: 0,
         usdcOut: 0,
         memecoinTransfers: 0,
+        tokenIn: 0,
+        tokenOut: 0,
+        tokenAmountIn: 0,
+        tokenAmountOut: 0,
         firstSeen: r.timestamp,
         lastSeen: r.timestamp,
         lastSignature: r.signature,
@@ -40,7 +49,15 @@ export function summarizeByWallet(rows: TransferRow[]): WalletSummary[] {
 
     sigs.get(r.counterparty)!.add(r.signature);
 
-    if (r.kind === "sol") r.direction === "in" ? (s.solIn += r.amount) : (s.solOut += r.amount);
+    if (mint) {
+      if (r.direction === "in") {
+        s.tokenIn += 1;
+        s.tokenAmountIn += r.amount;
+      } else {
+        s.tokenOut += 1;
+        s.tokenAmountOut += r.amount;
+      }
+    } else if (r.kind === "sol") r.direction === "in" ? (s.solIn += r.amount) : (s.solOut += r.amount);
     else if (r.kind === "usdc") r.direction === "in" ? (s.usdcIn += r.amount) : (s.usdcOut += r.amount);
     else s.memecoinTransfers += 1;
 
@@ -54,7 +71,9 @@ export function summarizeByWallet(rows: TransferRow[]): WalletSummary[] {
   for (const [wallet, s] of map) s.txCount = sigs.get(wallet)!.size;
 
   // Most frequent counterparties first, ties broken by most recent.
+  // In token mode "frequent" means number of transfers of that token.
+  const count = (w: WalletSummary) => (mint ? w.tokenIn + w.tokenOut : w.txCount);
   return Array.from(map.values()).sort(
-    (a, b) => b.txCount - a.txCount || b.lastSeen - a.lastSeen
+    (a, b) => count(b) - count(a) || b.lastSeen - a.lastSeen
   );
 }
