@@ -9,6 +9,13 @@ const MAX_PAGES = 5; // up to 500 txs scanned per API call
 const ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/; // base58, 32-44 chars
 const VALID_KINDS: Kind[] = ["sol", "usdc", "memecoin"];
 
+// Empty/missing -> 0 (no minimum). Returns null when the value is not a valid amount.
+function parseMin(raw: string | null): number | null {
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export async function GET(req: NextRequest) {
   const apiKey = process.env.HELIUS_API_KEY;
   if (!apiKey) {
@@ -25,11 +32,17 @@ export async function GET(req: NextRequest) {
     .split(",")
     .filter((k): k is Kind => VALID_KINDS.includes(k as Kind));
 
-  // Minimum SOL amount (inclusive). Only applies to rows of kind "sol".
-  const minSolRaw = searchParams.get("minSol");
-  const minSol = minSolRaw ? Number(minSolRaw) : 0;
-  if (!Number.isFinite(minSol) || minSol < 0) {
-    return NextResponse.json({ error: "Invalid minimum SOL amount" }, { status: 400 });
+  // Minimum amounts (inclusive). minSol applies to "sol" rows, minUsdc to "usdc" rows.
+  const minSol = parseMin(searchParams.get("minSol"));
+  const minUsdc = parseMin(searchParams.get("minUsdc"));
+  if (minSol === null || minUsdc === null) {
+    return NextResponse.json({ error: "Invalid minimum amount" }, { status: 400 });
+  }
+
+  // Direction filter relative to the scanned wallet: "in", "out" or "both" (default).
+  const direction = searchParams.get("direction") ?? "both";
+  if (!["in", "out", "both"].includes(direction)) {
+    return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
   }
 
   if (!ADDRESS_RE.test(wallet)) {
@@ -70,7 +83,9 @@ export async function GET(req: NextRequest) {
     for (const tx of txs) {
       for (const row of classifyTransaction(tx, wallet)) {
         if (!wanted.has(row.kind)) continue;
+        if (direction !== "both" && row.direction !== direction) continue;
         if (row.kind === "sol" && row.amount < minSol) continue;
+        if (row.kind === "usdc" && row.amount < minUsdc) continue;
         rows.push(row);
       }
     }
